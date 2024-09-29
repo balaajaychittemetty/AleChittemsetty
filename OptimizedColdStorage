@@ -1,0 +1,188 @@
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include "DHT.h"
+
+#define DHTPIN 4  // GPIO pin connected to the DHT22 sensor
+#define DHTTYPE DHT22
+
+const char* ssid = "Dreamer";  // Replace with your Wi-Fi SSID
+const char* password = "Alekhya9105";  // Replace with your Wi-Fi password
+const char* serverName = "http://your_raspberry_pi_ip:5000/api/store_data";  // Replace with Flask server IP
+
+DHT dht(DHTPIN, DHTTYPE);
+
+void setup() {
+  Serial.begin(115200);
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.println("Connecting to WiFi...");
+  }
+
+  Serial.println("Connected to WiFi.");
+  dht.begin();
+}
+
+void loop() {
+  float humidity = dht.readHumidity();
+  float temperature = dht.readTemperature();
+
+  if (isnan(humidity) || isnan(temperature)) {
+    Serial.println("Failed to read from DHT sensor!");
+    return;
+  }
+
+  // Display data
+  Serial.print("Temperature: ");
+  Serial.print(temperature);
+  Serial.print(" °C, Humidity: ");
+  Serial.print(humidity);
+  Serial.println(" %");
+
+  // Send data to the server
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    http.begin(serverName);
+    http.addHeader("Content-Type", "application/json");
+
+    String jsonData = "{\"temperature\": " + String(temperature) + ", \"humidity\": " + String(humidity) + "}";
+
+    int httpResponseCode = http.POST(jsonData);
+    if (httpResponseCode > 0) {
+      String response = http.getString();
+      Serial.println(httpResponseCode);
+      Serial.println(response);
+    } else {
+      Serial.print("Error sending POST: ");
+      Serial.println(httpResponseCode);
+    }
+
+    http.end();
+  } else {
+    Serial.println("WiFi not connected!");
+  }
+
+  delay(10000);  // Send data every 10 seconds
+}from flask import Flask, request, jsonify
+
+app = Flask(name)
+
+# Thresholds for optimal temperature and humidity
+TEMPERATURE_THRESHOLD = 25  # Celsius
+HUMIDITY_THRESHOLD = 60  # Percentage
+
+# Function to control cooling system
+def control_cooling_system(temperature, humidity):
+    if temperature > TEMPERATURE_THRESHOLD:
+        print("Temperature is too high! Turning on the cooling system.")
+        # Add GPIO code to turn on the cooling system
+    else:
+        print("Temperature is optimal. Cooling system off.")
+
+    if humidity > HUMIDITY_THRESHOLD:
+        print("Humidity is too high! Activating dehumidifier.")
+        # Add GPIO code to activate the dehumidifier
+    else:
+        print("Humidity is within range.")
+
+# Route to accept sensor data
+@app.route('/api/store_data', methods=['POST'])
+def store_data():
+    data = request.get_json()
+    if data:
+        temperature = data.get('temperature')
+        humidity = data.get('humidity')
+        if temperature is not None and humidity is not None:
+            print(f"Received data: Temperature = {temperature}, Humidity = {humidity}")
+            control_cooling_system(temperature, humidity)
+            return jsonify({"message": "Data received and processed"}), 200
+        else:
+            return jsonify({"error": "Invalid data format"}), 400
+    return jsonify({"error": "No data received"}), 400
+
+# Start Flask server
+if name == 'main':
+    app.run(host='0.0.0.0', port=5000)
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+
+void main() {
+  runApp(ColdStorageApp());
+}
+
+class ColdStorageApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Cold Storage Monitor',
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+      ),
+      home: ColdStorageMonitorPage(),
+    );
+  }
+}
+
+class ColdStorageMonitorPage extends StatefulWidget {
+  @override
+  _ColdStorageMonitorPageState createState() => _ColdStorageMonitorPageState();
+}
+
+class _ColdStorageMonitorPageState extends State<ColdStorageMonitorPage> {
+  double temperature = 0;
+  double humidity = 0;
+
+  Future<void> fetchStorageData() async {
+    try {
+      final response = await http.get(Uri.parse('http://your_raspberry_pi_ip:5000/api/get_storage_data'));
+
+      if (response.statusCode == 200) {
+        var data = jsonDecode(response.body);
+        setState(() {
+          temperature = data['temperature'];
+          humidity = data['humidity'];
+        });
+      } else {
+        throw Exception('Failed to load data');
+      }
+    } catch (e) {
+      print("Error fetching data: $e");
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    fetchStorageData();  // Fetch the data when the app starts
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Cold Storage Monitor'),
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            Text(
+              'Temperature: $temperature °C',
+              style: Theme.of(context).textTheme.headline4,
+            ),
+            Text(
+              'Humidity: $humidity %',
+              style: Theme.of(context).textTheme.headline4,
+            ),
+            ElevatedButton(
+              onPressed: fetchStorageData,  // Refresh data when button is pressed
+              child: Text('Refresh Data'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
